@@ -22,6 +22,13 @@ df3_groupby = df3_first_merge \
     .withColumnRenamed('max(rating)', 'max_rating') \
     .withColumnRenamed('sum(value)', 'sum_value')
 
+df3_sum_arap = df3_first_merge \
+    .where(df3_groupby.status == 'ARAP') \
+    .groupby(['legal_entity', 'counter_party', 'tier']) \
+    .sum('value') \
+    .withColumnRenamed('sum(value)', 'sum_value_arap')
+print(df3_sum_arap.show())
+
 df4_add_total = df3_groupby.withColumn('total_all_status',
                                        spark_sum('sum_value').over(
                                            Window.partitionBy('legal_entity', 'counter_party', 'tier')))
