@@ -1,79 +1,87 @@
-# Framework 1: pandas
-import string
+# framework 1: pandas
 
 import pandas as pd
 
-# Read the data from the csv file
+# read the data from the csv file
 df1 = pd.read_csv('dataset1.csv')
 df2 = pd.read_csv('dataset2.csv')
 
-# Merge the two dataframes
+# merge the two dataframes
 df3_first_merge = pd.merge(df1, df2, on='counter_party', how='inner')
 
 
-# -----------------------------------------------------------------------------------------------------------------------
-# SOLUTION 1
-# Generate desired output
-# legal_entity, counterparty, tier, max(rating by counterparty), sum(value where status=ARAP),
-# sum(value where status=ACCR)
-def aggregate_data(this_df: pd.DataFrame, status: string):
-    new_df = this_df.groupby(['legal_entity', 'counter_party', 'tier']).apply(lambda x: pd.Series({
-        'max_rating': x.loc[x['status'] == status, 'rating'].max(),
-        'sum_value': x.loc[x['status'] == status, 'value'].sum()
-    })).assign(status=status)
-
-    return new_df
-
-
-df4_arap = aggregate_data(df3_first_merge, 'ARAP')
-df4_accr = aggregate_data(df3_first_merge, 'ACCR')
-
-df4_join = pd.concat([df4_arap, df4_accr], axis=0, ignore_index=False)
-
-# create new record to add total for each of legal entity, counterparty & tier.
-df4_join['total_all_status'] = df4_join['sum_value'] \
-    .groupby(['legal_entity', 'counter_party', 'tier']) \
-    .transform(lambda x: x.sum())
-# print(df4_join)
-#                                  max_rating  sum_value status  total_all_status
-# legal_entity counter_party tier
-# L1           C1            1            3.0       40.0   ARAP              40.0
-#              C3            3            6.0        5.0   ARAP               5.0
-#              C4            4            6.0       40.0   ARAP             140.0
-# L2           C2            2            2.0       20.0   ARAP              60.0
-#              C3            3            NaN        0.0   ARAP              52.0
-#              C5            5            6.0     1000.0   ARAP            1115.0
-# L3           C3            3            NaN        0.0   ARAP             145.0
-#              C6            6            5.0      145.0   ARAP             205.0
-# L1           C1            1            NaN        0.0   ACCR              40.0
-#              C3            3            NaN        0.0   ACCR               5.0
-#              C4            4            5.0      100.0   ACCR             140.0
-# L2           C2            2            3.0       40.0   ACCR              60.0
-#              C3            3            2.0       52.0   ACCR              52.0
-#              C5            5            4.0      115.0   ACCR            1115.0
-# L3           C3            3            4.0      145.0   ACCR             145.0
-#              C6            6            6.0       60.0   ACCR             205.0
+def agg_group_by_one_col(group_by_col: str, the_other_col1: str, the_other_col2: str):
+    return df3_first_merge.groupby([group_by_col]).agg(
+        **{
+            f"{the_other_col1}": (the_other_col1, 'count'),
+            f"{the_other_col2}": (the_other_col2, 'count'),
+            "max_rating": ('rating', 'max'),
+            "sum_of_ARAP": ('value', lambda x: x[df3_first_merge['status'] == 'ARAP'].sum()),
+            "sum_of_ACCR": ('value', lambda x: x[df3_first_merge['status'] == 'ACCR'].sum())
+        }
+    ).reset_index()[
+        ['legal_entity', 'counter_party', 'tier', 'max_rating', 'sum_of_ARAP', 'sum_of_ACCR']]
 
 
-# -----------------------------------------------------------------------------------------------------------------------
-# BETTER SOLUTIONS
-# Using pivot_table
-df4_sum = df3_first_merge.pivot_table(index=['legal_entity', 'counter_party', 'tier'], columns='status', values='value',
-                                      aggfunc='sum').rename(columns={'ARAP': 'sum_ARAP', 'ACCR': 'sum_ACCR'})
-df4_max = pd.DataFrame(df3_first_merge.groupby(['legal_entity', 'counter_party', 'tier']).agg({'rating': 'max'}))
-df4_max.rename(columns={'rating': 'max_rating'}, inplace=True)
+df4_le_sum = agg_group_by_one_col('legal_entity', 'counter_party', 'tier')
+df4_cp_sum = agg_group_by_one_col('counter_party', 'legal_entity', 'tier')
+df4_tier_sum = agg_group_by_one_col('tier', 'legal_entity', 'counter_party')
 
-df5 = pd.merge(df4_max, df4_sum, on=['legal_entity', 'counter_party', 'tier'], how='inner').fillna(0)
-df5['total_all_status'] = df5['sum_ARAP'] + df5['sum_ACCR']
 
+def agg_group_by_two_col(group_by_col: str, the_other_group_by_col1: str, the_other_col: str):
+    return df3_first_merge.groupby([group_by_col, the_other_group_by_col1]).agg(
+        **{
+            f"{the_other_col}": (the_other_col, 'count'),
+            "max_rating": ('rating', 'max'),
+            "sum_of_ARAP": ('value', lambda x: x[df3_first_merge['status'] == 'ARAP'].sum()),
+            "sum_of_ACCR": ('value', lambda x: x[df3_first_merge['status'] == 'ACCR'].sum())
+        }
+    ).reset_index()[
+        ['legal_entity', 'counter_party', 'tier', 'max_rating', 'sum_of_ARAP', 'sum_of_ACCR']]
+
+
+df4_le_cp_sum = agg_group_by_two_col('legal_entity', 'counter_party', 'tier')
+df4_le_tier_sum = agg_group_by_two_col('legal_entity', 'tier', 'counter_party')
+df4_cp_tier_sum = agg_group_by_two_col('counter_party', 'tier', 'legal_entity')
+
+df5 = pd.concat([df4_le_sum, df4_cp_sum, df4_tier_sum, df4_le_cp_sum, df4_le_tier_sum, df4_cp_tier_sum], axis=0,
+                ignore_index=False)
 print(df5)
-#                                  max_rating  sum_ACCR  sum_ARAP  total_all_status
-# legal_entity counter_party tier
-# L1           C1            1              3       0.0      40.0              40.0
-#              C3            3              6       0.0       5.0               5.0
-#              C4            4              6     100.0      40.0             140.0
-# L2           C2            2              3      40.0      20.0              60.0
-#              C3            3              2      52.0       0.0              52.0
-#              C5            5              6     115.0    1000.0            1115.0
-# L3           C3            3              4     145.0       0.0             145.0
-#              C6            6              6      60.0     145.0             205.0
+#   legal_entity counter_party  tier  max_rating  sum_of_ARAP  sum_of_ACCR
+# 0           L1             6     6           6           85          100
+# 1           L2             6     6           6         1020          207
+# 2           L3             6     6           6          145          205
+# 0            3            C1     3           3           40            0
+# 1            2            C2     2           3           20           40
+# 2            5            C3     5           6            5          197
+# 3            2            C4     2           6           40          100
+# 4            3            C5     3           6         1000          115
+# 5            3            C6     3           6          145           60
+# 0            3             3     1           3           40            0
+# 1            2             2     2           3           20           40
+# 2            5             5     3           6            5          197
+# 3            2             2     4           6           40          100
+# 4            3             3     5           6         1000          115
+# 5            3             3     6           6          145           60
+# 0           L1            C1     3           3           40            0
+# 1           L1            C3     1           6            5            0
+# 2           L1            C4     2           6           40          100
+# 3           L2            C2     2           3           20           40
+# 4           L2            C3     1           2            0           52
+# 5           L2            C5     3           6         1000          115
+# 6           L3            C3     3           4            0          145
+# 7           L3            C6     3           6          145           60
+# 0           L1             3     1           3           40            0
+# 1           L1             1     3           6            5            0
+# 2           L1             2     4           6           40          100
+# 3           L2             2     2           3           20           40
+# 4           L2             1     3           2            0           52
+# 5           L2             3     5           6         1000          115
+# 6           L3             3     3           4            0          145
+# 7           L3             3     6           6          145           60
+# 0            3            C1     1           3           40            0
+# 1            2            C2     2           3           20           40
+# 2            5            C3     3           6            5          197
+# 3            2            C4     4           6           40          100
+# 4            3            C5     5           6         1000          115
+# 5            3            C6     6           6          145           60
