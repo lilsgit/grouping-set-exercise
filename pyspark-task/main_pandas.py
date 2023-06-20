@@ -24,16 +24,20 @@ def agg_group_by_cols(group_by_cols: [str], the_other_cols: [str]):
         ['legal_entity', 'counter_party', 'tier', 'max_rating', 'sum_of_ARAP', 'sum_of_ACCR']]
 
 
-df4_le_sum = agg_group_by_cols(['legal_entity'], ['counter_party', 'tier'])
-df4_cp_sum = agg_group_by_cols(['counter_party'], ['legal_entity', 'tier'])
-df4_tier_sum = agg_group_by_cols(['tier'], ['legal_entity', 'counter_party'])
-df4_le_cp_sum = agg_group_by_cols(['legal_entity', 'counter_party'], ['tier'])
-df4_le_tier_sum = agg_group_by_cols(['legal_entity', 'tier'], ['counter_party'])
-df4_cp_tier_sum = agg_group_by_cols(['counter_party', 'tier'], ['legal_entity'])
+all_mappings = [
+    (['legal_entity'], ['counter_party', 'tier']),
+    (['counter_party'], ['legal_entity', 'tier']),
+    (['tier'], ['legal_entity', 'counter_party']),
+    (['legal_entity', 'counter_party'], ['tier']),
+    (['legal_entity', 'tier'], ['counter_party']),
+    (['counter_party', 'tier'], ['legal_entity'])
+]
 
-# concat all the dataframes
-df5 = pd.concat([df4_le_sum, df4_cp_sum, df4_tier_sum, df4_le_cp_sum, df4_le_tier_sum, df4_cp_tier_sum], axis=0,
-                ignore_index=False)
+all_dataframes = []
+for group_by_cols, the_other_cols in all_mappings:
+    df = agg_group_by_cols(group_by_cols, the_other_cols)
+    all_dataframes.append(df)
+df5 = pd.concat(all_dataframes, axis=0, ignore_index=False)
 print(df5)
 #   legal_entity counter_party  tier  max_rating  sum_of_ARAP  sum_of_ACCR
 # 0           L1             6     6           6           85          100
