@@ -10,39 +10,25 @@ df2 = pd.read_csv('dataset2.csv')
 df3_first_merge = pd.merge(df1, df2, on='counter_party', how='inner')
 
 
-def agg_group_by_one_col(group_by_col: str, the_other_col1: str, the_other_col2: str):
-    return df3_first_merge.groupby([group_by_col]).agg(
-        **{
-            f"{the_other_col1}": (the_other_col1, 'count'),
-            f"{the_other_col2}": (the_other_col2, 'count'),
-            "max_rating": ('rating', 'max'),
-            "sum_of_ARAP": ('value', lambda x: x[df3_first_merge['status'] == 'ARAP'].sum()),
-            "sum_of_ACCR": ('value', lambda x: x[df3_first_merge['status'] == 'ACCR'].sum())
-        }
-    ).reset_index()[
+def agg_group_by_cols(group_by_cols: [str], the_other_cols: [str], ):
+    agg_dict = {
+        f"{col}": (col, 'count') for col in the_other_cols
+    }
+    agg_dict.update({
+        "max_rating": ('rating', 'max'),
+        "sum_of_ARAP": ('value', lambda x: x[df3_first_merge['status'] == 'ARAP'].sum()),
+        "sum_of_ACCR": ('value', lambda x: x[df3_first_merge['status'] == 'ACCR'].sum())
+    })
+    return df3_first_merge.groupby(group_by_cols).agg(**agg_dict).reset_index()[
         ['legal_entity', 'counter_party', 'tier', 'max_rating', 'sum_of_ARAP', 'sum_of_ACCR']]
 
 
-df4_le_sum = agg_group_by_one_col('legal_entity', 'counter_party', 'tier')
-df4_cp_sum = agg_group_by_one_col('counter_party', 'legal_entity', 'tier')
-df4_tier_sum = agg_group_by_one_col('tier', 'legal_entity', 'counter_party')
-
-
-def agg_group_by_two_col(group_by_col: str, the_other_group_by_col1: str, the_other_col: str):
-    return df3_first_merge.groupby([group_by_col, the_other_group_by_col1]).agg(
-        **{
-            f"{the_other_col}": (the_other_col, 'count'),
-            "max_rating": ('rating', 'max'),
-            "sum_of_ARAP": ('value', lambda x: x[df3_first_merge['status'] == 'ARAP'].sum()),
-            "sum_of_ACCR": ('value', lambda x: x[df3_first_merge['status'] == 'ACCR'].sum())
-        }
-    ).reset_index()[
-        ['legal_entity', 'counter_party', 'tier', 'max_rating', 'sum_of_ARAP', 'sum_of_ACCR']]
-
-
-df4_le_cp_sum = agg_group_by_two_col('legal_entity', 'counter_party', 'tier')
-df4_le_tier_sum = agg_group_by_two_col('legal_entity', 'tier', 'counter_party')
-df4_cp_tier_sum = agg_group_by_two_col('counter_party', 'tier', 'legal_entity')
+df4_le_sum = agg_group_by_cols(['legal_entity'], ['counter_party', 'tier'])
+df4_cp_sum = agg_group_by_cols(['counter_party'], ['legal_entity', 'tier'])
+df4_tier_sum = agg_group_by_cols(['tier'], ['legal_entity', 'counter_party'])
+df4_le_cp_sum = agg_group_by_cols(['legal_entity', 'counter_party'], ['tier'])
+df4_le_tier_sum = agg_group_by_cols(['legal_entity', 'tier'], ['counter_party'])
+df4_cp_tier_sum = agg_group_by_cols(['counter_party', 'tier'], ['legal_entity'])
 
 df5 = pd.concat([df4_le_sum, df4_cp_sum, df4_tier_sum, df4_le_cp_sum, df4_le_tier_sum, df4_cp_tier_sum], axis=0,
                 ignore_index=False)
