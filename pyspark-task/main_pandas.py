@@ -10,7 +10,8 @@ df2 = pd.read_csv('dataset2.csv')
 df3_first_merge = pd.merge(df1, df2, on='counter_party', how='inner')
 
 
-def agg_group_by_cols(group_by_cols: [str], the_other_cols: [str], ):
+# function to aggregate the data
+def agg_group_by_cols(group_by_cols: [str], the_other_cols: [str]):
     agg_dict = {
         f"{col}": (col, 'count') for col in the_other_cols
     }
@@ -30,6 +31,7 @@ df4_le_cp_sum = agg_group_by_cols(['legal_entity', 'counter_party'], ['tier'])
 df4_le_tier_sum = agg_group_by_cols(['legal_entity', 'tier'], ['counter_party'])
 df4_cp_tier_sum = agg_group_by_cols(['counter_party', 'tier'], ['legal_entity'])
 
+# concat all the dataframes
 df5 = pd.concat([df4_le_sum, df4_cp_sum, df4_tier_sum, df4_le_cp_sum, df4_le_tier_sum, df4_cp_tier_sum], axis=0,
                 ignore_index=False)
 print(df5)
