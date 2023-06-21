@@ -1,195 +1,102 @@
-# Framework 2: beam
+import re
 
 import apache_beam as beam
-from apache_beam.options.pipeline_options import PipelineOptions
 
+# Define a pipeline
+pipeline = beam.Pipeline()
 
-def split_by_kv(element, index, delimiter=","):
-    # Need a better approach here
-    split = element.split(delimiter)
-    return split[index], element
+# Read the data from the CSV files
+dataset1 = (
+        pipeline
+        | 'Read dataset1' >> beam.io.ReadFromText('dataset1.csv')
+        | 'Get each line' >> beam.Map(lambda line: re.sub(r'\r', ',', line).split(',')[6:])
+        | 'Group records' >> beam.Map(lambda array: [array[i:i + 6] for i in range(0, len(array), 6)])
+        | 'Create key-value pairs' >> beam.FlatMap(lambda fields: [(item[2], {
+    'invoice_id': item[0],
+    'legal_entity': item[1],
+    'counter_party': item[2],
+    'rating': item[3],
+    'status': item[4],
+    'value': item[5]
+}) for item in fields])
+)
 
+dataset2 = (
+        pipeline
+        | 'Read dataset2' >> beam.io.ReadFromText('dataset2.csv')
+        | 'Get each line for d2' >> beam.Map(lambda line: re.sub(r'\r', ',', line).split(',')[2:])
+        | 'Group records for d2' >> beam.Map(lambda array: [array[i:i + 2] for i in range(0, len(array), 2)])
+        | 'Create key-value pairs for d2' >> beam.FlatMap(lambda fields: [(item[0], {
+    'counter_party': item[0],
+    'tier': item[1],
+}) for item in fields])
+)
 
-# Read the data from the csv file
-with beam.Pipeline(options=PipelineOptions()) as p:
-    df1 = p \
-          | 'Read dataset1' >> beam.io.ReadFromText('dataset1.csv', skip_header_lines=0) \
-          | 'Split by counter_party at index 2' >> beam.Map(split_by_kv, 2)
+# Merge the two PCollections
+merged_data = (
+        ({'df1': dataset1, 'df2': dataset2})
+        | 'Merge datasets based on counter_party' >> beam.CoGroupByKey()
+        | 'Flatten' >> beam.FlatMap(lambda data: [{**{'legal_entity': d1['legal_entity'],
+                                                      'counter_party': d1['counter_party'],
+                                                      'tier': data[1]['df2'][0]['tier'], 'rating': d1['rating'],
+                                                      'status': d1['status'], 'value': d1['value']},
+                                                   **data[1]['df2'][0]} for d1 in data[1]['df1']]
+                                    )
+)
 
-    df2 = p \
-          | 'Read dataset2' >> beam.io.ReadFromText('dataset2.csv', skip_header_lines=0) \
-          | 'Split by counter_party at index 0' >> beam.Map(split_by_kv, 0)
+# Aggregate the data to generate the desired output
+aggregated_data = (
+        merged_data
+        | 'Add max_rating, sum_of_ARAP, and sum_of_ACCR' >> beam.Map(lambda data: (
+    (data['legal_entity'], data['counter_party']),
+    {
+        'legal_entity': data['legal_entity'],
+        'counter_party': data['counter_party'],
+        'tier': data['tier'],
+        'max_rating': data['rating'],
+        'sum_of_ARAP': int(data['value']) if data['status'] == 'ARAP' else 0,
+        'sum_of_ACCR': int(data['value']) if data['status'] == 'ACCR' else 0
+    }
+))
+        | 'Group by legal_entity and counter_party' >> beam.GroupByKey()
+        | 'Calculate max_rating, sum_of_ARAP, and sum_of_ACCR' >> beam.Map(lambda data: {
+    'legal_entity': data[0][0],
+    'counter_party': data[0][1],
+    'tier': max(entry['tier'] for entry in data[1]),
+    'max_rating': max(entry['max_rating'] for entry in data[1]),
+    'sum_of_ARAP': sum(entry['sum_of_ARAP'] for entry in data[1]),
+    'sum_of_ACCR': sum(entry['sum_of_ACCR'] for entry in data[1])
+})
+)
 
-    # Merge the two dataframes
-    df3_first_merge = ({"df1": df1, "df2": df2}
-                       | beam.CoGroupByKey()
-                       )
+# Define the header for the output
+header = 'legal_entity counter_party  tier  max_rating  sum_of_ARAP  sum_of_ACCR'
 
+# Print the header
+print(header)
 
-    # -----------------------------------------------------------------------------------------------------------------------
-    # SOLUTION 1
-    # Generate desired output
-    # legal_entity, counterparty, tier, max(rating by counterparty), sum(value where status=ARAP),
-    # sum(value where status=ACCR)
-    def process_data(element):
-        counter_party, data = element
-        df1_values = data["df1"][0].split("\r")[1:]
-        df2_values = data["df2"][0].split("\r")[1:]
+# Print the formatted output
+formatted_output = (
+        aggregated_data
+        | 'Format output' >> beam.Map(lambda data: (
+    data['legal_entity'],
+    data['counter_party'],
+    data['tier'],
+    data['max_rating'],
+    data['sum_of_ARAP'],
+    data['sum_of_ACCR']
+))
+        | 'Format and print rows' >> beam.Map(lambda data: '           '.join(str(value) for value in data))
+        | 'Print rows' >> beam.Map(print)
+)
 
-        for i in range(len(df1_values)):
-            split_string = df1_values[i].split(',')
-            key = split_string[2]  # Extract the key from the split string
-            for pair in df2_values:
-                if pair.startswith(key + ','):  # Check if the key exists in the key-value pairs
-                    value = pair.split(',')[1]  # Extract the corresponding value
-                    df1_values[i] += "," + value
-
-        max_ratings = {}
-        sum_by_status = {}
-        total = {}
-        for value in df1_values:
-            split_value = value.split(',')
-            legal_entity = split_value[1]
-            counter_party = split_value[2]
-            tier = split_value[6]
-            status = split_value[4]
-            key = (legal_entity, counter_party, tier, status)
-            rating = int(split_value[3])
-
-            if key in max_ratings:
-                max_ratings[key] = max(max_ratings[key], rating)
-            else:
-                max_ratings[key] = rating
-
-            if key in sum_by_status:
-                sum_by_status[key] += int(split_value[5])
-            else:
-                sum_by_status[key] = int(split_value[5])
-
-            combined_dict = {}
-            for key, value in max_ratings.items():
-                if key in sum_by_status:
-                    combined_dict[key] = (value, sum_by_status[key])
-
-            # create new record to add total for each of legal entity, counterparty & tier.
-            new_key = (legal_entity, counter_party, tier)
-            if new_key in total:
-                total[new_key] += int(split_value[5])
-            else:
-                total[new_key] = int(split_value[5])
-
-            # add total to combined_dict
-            final_combined_dict = {}
-            for key1, value1 in total.items():
-                for key2, value2 in combined_dict.items():
-                    if key1[:3] == key2[:3]:
-                        combined_key = key1 + key2[3:]
-                        final_combined_dict[combined_key] = (value2[0], value2[1], value1)
-
-        output = "legal_entity,counterparty,tier,status,max_rating,sum_by_status,total\n"
-        for key, (max_rating, sum_by_status, total) in final_combined_dict.items():
-            legal_entity, counterparty, tier, status = key
-            output += f"{legal_entity},{counterparty},{tier},{status},{max_rating},{sum_by_status},{total}\n"
-
-        return output
-
-
-    df4 = df3_first_merge \
-          | beam.Map(process_data) \
-          | beam.io.WriteToText('output.csv')
-
-
-    # legal_entity,counterparty,tier,status,max_rating,sum_by_status,total
-    # L1,C1,1,ARAP,3,40,40
-    # L2,C2,2,ARAP,2,20,60
-    # L2,C2,2,ACCR,3,40,60
-    # L3,C3,3,ACCR,4,145,145
-    # L1,C4,4,ARAP,6,40,140
-    # L1,C4,4,ACCR,5,100,140
-    # L2,C5,5,ACCR,4,115,1115
-    # L2,C5,5,ARAP,6,1000,1115
-    # L3,C6,6,ACCR,6,60,205
-    # L3,C6,6,ARAP,5,145,205
-    # L2,C3,3,ACCR,2,52,52
-    # L1,C3,3,ARAP,6,5,5
-
-    # -----------------------------------------------------------------------------------------------------------------------
-    # BETTER SOLUTIONS
-    # Using pivot_table
-    def new_process_data(element):
-        counter_party, data = element
-        df1_values = data["df1"][0].split("\r")[1:]
-        df2_values = data["df2"][0].split("\r")[1:]
-
-        for i in range(len(df1_values)):
-            split_string = df1_values[i].split(',')
-            key = split_string[2]  # Extract the key from the split string
-            for pair in df2_values:
-                if pair.startswith(key + ','):  # Check if the key exists in the key-value pairs
-                    value = pair.split(',')[1]  # Extract the corresponding value
-                    df1_values[i] += "," + value
-
-        max_ratings = {}
-        sum_value_accr = {}
-        sum_value_arap = {}
-
-        for value in df1_values:
-            split_value = value.split(',')
-            legal_entity = split_value[1]
-            counter_party = split_value[2]
-            tier = split_value[6]
-            status = split_value[4]
-            key = (legal_entity, counter_party, tier)
-            rating = int(split_value[3])
-            accr_value = int(split_value[5])
-            arap_value = int(split_value[5])
-
-            if key in max_ratings:
-                max_ratings[key] = max(max_ratings[key], rating)
-            else:
-                max_ratings[key] = rating
-
-            # Update sum of accr_value and arap_value
-            if status == "ACCR":
-                if key in sum_value_accr:
-                    sum_value_accr[key] += accr_value
-                else:
-                    sum_value_accr[key] = accr_value
-            elif status == "ARAP":
-                if key in sum_value_arap:
-                    sum_value_arap[key] += arap_value
-                else:
-                    sum_value_arap[key] = arap_value
-
-        output = "+------------+-------------+----+----------+--------------+--------------+----------------+\n"
-        output += "|legal_entity|counter_party|tier|max_rating|sum_value_accr|sum_value_arap|total_all_status|\n"
-        output += "+------------+-------------+----+----------+--------------+--------------+----------------+\n"
-
-        for key, max_rating in max_ratings.items():
-            legal_entity, counter_party, tier = key
-
-            accr_value = sum_value_accr.get(key, 0)
-            arap_value = sum_value_arap.get(key, 0)
-
-            output += f"|{legal_entity:^12}|{counter_party:^13}|{tier:^4}|{max_rating:^10}|{accr_value:^14}|{arap_value:^14}|{accr_value + arap_value:^16}|\n"
-
-        output += "+------------+-------------+----+----------+--------------+--------------+----------------+\n"
-
-        return output
-
-
-    df5 = df3_first_merge \
-          | beam.Map(new_process_data) \
-          | beam.Map(print)
-# +------------+-------------+----+----------+--------------+--------------+----------------+
-# |legal_entity|counter_party|tier|max_rating|sum_value_accr|sum_value_arap|total_all_status|
-# +------------+-------------+----+----------+--------------+--------------+----------------+
-# |     L1     |     C1      | 1  |    3     |      0       |      40      |       40       |
-# |     L2     |     C2      | 2  |    3     |      40      |      20      |       60       |
-# |     L3     |     C3      | 3  |    4     |     145      |      0       |      145       |
-# |     L1     |     C4      | 4  |    6     |     100      |      40      |      140       |
-# |     L2     |     C5      | 5  |    6     |     115      |     1000     |      1115      |
-# |     L3     |     C6      | 6  |    6     |      60      |     145      |      205       |
-# |     L2     |     C3      | 3  |    2     |      52      |      0       |       52       |
-# |     L1     |     C3      | 3  |    6     |      0       |      5       |       5        |
-# +------------+-------------+----+----------+--------------+--------------+----------------+
+pipeline.run()
+# legal_entity counter_party  tier  max_rating  sum_of_ARAP  sum_of_ACCR
+# L1           C1           1           3           40           0
+# L2           C2           2           3           20           40
+# L3           C3           3           4           0           145
+# L2           C3           3           2           0           52
+# L1           C3           3           6           5           0
+# L1           C4           4           6           40           100
+# L2           C5           5           6           1000           115
+# L3           C6           6           6           145           60
