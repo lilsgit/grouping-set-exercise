@@ -14,10 +14,15 @@ spark = SparkSession.builder \
 df1 = spark.read.csv('dataset1.csv', header=True, inferSchema=True)
 df2 = spark.read.csv('dataset2.csv', header=True, inferSchema=True)
 
+# Cache the DataFrames for reuse
+df1.cache()
+df2.cache()
+
 # Merge the two dataframes
-df3_first_merge = df1.join(df2, on='counter_party', how='inner')
+df3_first_merge = df1.join(df2.hint("broadcast"), on='counter_party', how='inner')
 
 
+# Function to calculate the metrics
 def agg_group_by_cols(group_by_cols: [str], the_other_cols: [str]):
     count_expressions = [count(col_name).alias(col_name) for col_name in the_other_cols]
     sum_if = lambda pyspark_expr, col: sum(when(pyspark_expr, col).otherwise(0))
@@ -32,21 +37,21 @@ def agg_group_by_cols(group_by_cols: [str], the_other_cols: [str]):
         .select('legal_entity', 'counter_party', 'tier', 'max_rating', 'sum_value_ARAP', 'sum_value_ACCR')
 
 
-all_mappings = [
-    (['legal_entity'], ['counter_party', 'tier']),
-    (['counter_party'], ['legal_entity', 'tier']),
-    (['tier'], ['legal_entity', 'counter_party']),
-    (['legal_entity', 'counter_party'], ['tier']),
-    (['legal_entity', 'tier'], ['counter_party']),
-    (['counter_party', 'tier'], ['legal_entity'])
-]
+# Generate all the group by pairs needed
+def generate_all_pairs(*args):
+    all_mappings = []
+    for i in range(len(args)):
+        group_by_name = [args[i]]
+        the_rest_names = [args[j] for j in range(len(args)) if j != i]
+        all_mappings.append((group_by_name, the_rest_names))
+    return all_mappings
 
-all_dataframes = []
-for group_by_cols, the_other_cols in all_mappings:
-    df = agg_group_by_cols(group_by_cols, the_other_cols)
-    all_dataframes.append(df)
-df5 = reduce(DataFrame.unionAll, all_dataframes)
 
+group_by_cols = ('legal_entity', 'counter_party', 'tier')
+all_pairs = generate_all_pairs(*group_by_cols)
+
+df5 = reduce(DataFrame.unionAll,
+             [agg_group_by_cols(group_by_cols, the_other_cols) for group_by_cols, the_other_cols in all_pairs])
 df5.show()
 # +------------+-------------+----+----------+--------------+--------------+
 # |legal_entity|counter_party|tier|max_rating|sum_value_ARAP|sum_value_ACCR|
@@ -73,3 +78,9 @@ df5.show()
 # |          L3|           C3|   3|         4|             0|           145|
 # +------------+-------------+----+----------+--------------+--------------+
 # only showing top 20 rows
+
+
+# extra thoughts:
+# grouping object:
+# filter first - assign filter to different partition
+# basic idea: using different nodes in spark

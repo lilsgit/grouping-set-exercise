@@ -45,17 +45,20 @@ def union_all_dataframes(all_mappings_list: [([str], [str])]):
     return pd.concat(all_dataframes, axis=0, ignore_index=False)
 
 
-# all the group by pairs needed
-all_mappings = [
-    (['legal_entity'], ['counter_party', 'tier']),
-    (['counter_party'], ['legal_entity', 'tier']),
-    (['tier'], ['legal_entity', 'counter_party']),
-    (['legal_entity', 'counter_party'], ['tier']),
-    (['legal_entity', 'tier'], ['counter_party']),
-    (['counter_party', 'tier'], ['legal_entity'])
-]
+# generate all the group by pairs needed
+def generate_all_pairs(*args):
+    all_mappings = []
+    for i in range(len(args)):
+        group_by_name = [args[i]]
+        the_rest_names = [args[j] for j in range(len(args)) if j != i]
+        all_mappings.append((group_by_name, the_rest_names))
+    return all_mappings
 
-df5 = union_all_dataframes(all_mappings)
+
+group_by_cols = ('legal_entity', 'counter_party', 'tier')
+all_pairs = generate_all_pairs(*group_by_cols)
+
+df5 = union_all_dataframes(all_pairs)
 print(df5)
 #   legal_entity counter_party  tier  max_rating  sum_of_ARAP  sum_of_ACCR
 # 0           L1             6     6           6           85          100

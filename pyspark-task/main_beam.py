@@ -2,101 +2,103 @@ import re
 
 import apache_beam as beam
 
+
+# In this solution, we used the Pardo function to process the join:
+# dataset2 is used as a dictionary (sideinput) to join with dataset1.
+# The output of the join is flattened and the desired output is generated.
+class ProcessMainDataSet(beam.DoFn):
+    def process(self, element, dataset2_dict):
+        invoice_id, legal_entity, counter_party, rating, status, value = element
+        if counter_party in dataset2_dict:
+            yield counter_party, (
+                invoice_id, legal_entity, counter_party, int(dataset2_dict[counter_party]), int(rating), status,
+                int(value))
+
+
+class ProcessJoiningDataset(beam.DoFn):
+    def process(self, element):
+        counter_party, tier = element
+        yield counter_party, tier
+
+
 # Define a pipeline
 pipeline = beam.Pipeline()
 
-# Read the data from the CSV files
-dataset1 = (
-        pipeline
-        | 'Read dataset1' >> beam.io.ReadFromText('dataset1.csv')
-        | 'Get each line' >> beam.Map(lambda line: re.sub(r'\r', ',', line).split(',')[6:])
-        | 'Group records' >> beam.Map(lambda array: [array[i:i + 6] for i in range(0, len(array), 6)])
-        | 'Create key-value pairs' >> beam.FlatMap(lambda fields: [(item[2], {
-    'invoice_id': item[0],
-    'legal_entity': item[1],
-    'counter_party': item[2],
-    'rating': item[3],
-    'status': item[4],
-    'value': item[5]
-}) for item in fields])
-)
-
+# Read the data from the CSV files and join them
 dataset2 = (
         pipeline
         | 'Read dataset2' >> beam.io.ReadFromText('dataset2.csv')
-        | 'Get each line for d2' >> beam.Map(lambda line: re.sub(r'\r', ',', line).split(',')[2:])
-        | 'Group records for d2' >> beam.Map(lambda array: [array[i:i + 2] for i in range(0, len(array), 2)])
-        | 'Create key-value pairs for d2' >> beam.FlatMap(lambda fields: [(item[0], {
-    'counter_party': item[0],
-    'tier': item[1],
-}) for item in fields])
+        | 'Get each record' >> beam.Map(lambda line: re.sub(r'\r', ',', line).split(',')[2:])
+        | 'Group records based on len(col)=2' >> beam.FlatMap(
+    lambda array: [array[i:i + 2] for i in range(0, len(array), 2)])
+        | 'Process dataset2' >> beam.ParDo(ProcessJoiningDataset())
 )
 
-# Merge the two PCollections
-merged_data = (
-        ({'df1': dataset1, 'df2': dataset2})
-        | 'Merge datasets based on counter_party' >> beam.CoGroupByKey()
-        | 'Flatten' >> beam.FlatMap(lambda data: [{**{'legal_entity': d1['legal_entity'],
-                                                      'counter_party': d1['counter_party'],
-                                                      'tier': data[1]['df2'][0]['tier'], 'rating': d1['rating'],
-                                                      'status': d1['status'], 'value': d1['value']},
-                                                   **data[1]['df2'][0]} for d1 in data[1]['df1']]
-                                    )
+merged_dataset = (
+        pipeline
+        | 'Read dataset1' >> beam.io.ReadFromText('dataset1.csv')
+        | 'Get each record ready' >> beam.Map(lambda line: re.sub(r'\r', ',', line).split(',')[6:])
+        | 'Group cells into rows' >> beam.FlatMap(lambda array: [array[i:i + 6] for i in range(0, len(array), 6)])
+        | 'Process dataset1 and merge dataset2 in' >> beam.ParDo(ProcessMainDataSet(), beam.pvalue.AsDict(dataset2))
 )
 
-# Aggregate the data to generate the desired output
-aggregated_data = (
-        merged_data
-        | 'Add max_rating, sum_of_ARAP, and sum_of_ACCR' >> beam.Map(lambda data: (
-    (data['legal_entity'], data['counter_party']),
-    {
-        'legal_entity': data['legal_entity'],
-        'counter_party': data['counter_party'],
-        'tier': data['tier'],
-        'max_rating': data['rating'],
-        'sum_of_ARAP': int(data['value']) if data['status'] == 'ARAP' else 0,
-        'sum_of_ACCR': int(data['value']) if data['status'] == 'ACCR' else 0
-    }
-))
-        | 'Group by legal_entity and counter_party' >> beam.GroupByKey()
-        | 'Calculate max_rating, sum_of_ARAP, and sum_of_ACCR' >> beam.Map(lambda data: {
-    'legal_entity': data[0][0],
-    'counter_party': data[0][1],
-    'tier': max(entry['tier'] for entry in data[1]),
-    'max_rating': max(entry['max_rating'] for entry in data[1]),
-    'sum_of_ARAP': sum(entry['sum_of_ARAP'] for entry in data[1]),
-    'sum_of_ACCR': sum(entry['sum_of_ACCR'] for entry in data[1])
-})
+
+# Define all the group by functions
+class GroupByCols(beam.DoFn):
+    def __init__(self, status):
+        self.status = status
+
+    def process(self, element):
+        counter_party, (
+            invoice_id, legal_entity, counter_party, tier, rating, status, value) = element
+        if status == self.status:
+            yield (legal_entity, counter_party, tier, status), value
+            yield (legal_entity, status), (counter_party, tier, value)
+            yield (counter_party, status), (legal_entity, tier, value)
+            yield (tier, status), (legal_entity, counter_party, value)
+            yield (legal_entity, counter_party, status), (tier, value)
+            yield (legal_entity, tier, status), (counter_party, value)
+            yield (counter_party, tier, status), (legal_entity, value)
+
+
+class CalculateCountMaxSum(beam.CombineFn):
+    def create_accumulator(self):
+        return (0, float('-inf'), 0)
+
+    def add_input(self, accumulator, element):
+        count, max_tier, total_value = accumulator
+        col_for_count, col_for_max, value = element
+        count += 1
+        max_tier = max(max_tier, col_for_max)
+        total_value += value
+        return count, max_tier, total_value
+
+    def merge_accumulators(self, accumulators):
+        total_count, max_tier, total_value = zip(*accumulators)
+        return sum(total_count), max(max_tier), sum(total_value)
+
+    def extract_output(self, accumulator):
+        return accumulator
+
+
+sum_arap = (
+        merged_dataset
+        | 'arap sum' >> beam.ParDo(GroupByCols('ARAP'))
+    # | 'get arap sum' >> beam.CombinePerKey(CalculateCountMaxSum())
 )
 
-# Define the header for the output
-header = 'legal_entity counter_party  tier  max_rating  sum_of_ARAP  sum_of_ACCR'
-
-# Print the header
-print(header)
-
-# Print the formatted output
-formatted_output = (
-        aggregated_data
-        | 'Format output' >> beam.Map(lambda data: (
-    data['legal_entity'],
-    data['counter_party'],
-    data['tier'],
-    data['max_rating'],
-    data['sum_of_ARAP'],
-    data['sum_of_ACCR']
-))
-        | 'Format and print rows' >> beam.Map(lambda data: '           '.join(str(value) for value in data))
-        | 'Print rows' >> beam.Map(print)
+sum_accr = (
+        merged_dataset
+        | 'accr sum' >> beam.ParDo(GroupByCols('ACCR'))
+    # | 'get accr sum' >> beam.CombinePerKey(CalculateCountMaxSum())
 )
+
+sum_results = (
+        (sum_arap, sum_accr)
+        | beam.Flatten()
+)
+
+# Print the merged and aggregated data
+sum_results | 'Print aggregated data' >> beam.Map(print)
 
 pipeline.run()
-# legal_entity counter_party  tier  max_rating  sum_of_ARAP  sum_of_ACCR
-# L1           C1           1           3           40           0
-# L2           C2           2           3           20           40
-# L3           C3           3           4           0           145
-# L2           C3           3           2           0           52
-# L1           C3           3           6           5           0
-# L1           C4           4           6           40           100
-# L2           C5           5           6           1000           115
-# L3           C6           6           6           145           60
