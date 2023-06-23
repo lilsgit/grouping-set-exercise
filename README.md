@@ -1,4 +1,4 @@
-# python-practice
+# python-practice (grouping set)
 
 ## This repo contains simple coding excercise for the following questions: 
 
@@ -21,3 +21,17 @@ legal_entity, counterparty, tier, max(rating by counterparty), sum(value where s
 sum(value where status=ACCR)
 
 Also create new record to add total for each of legal entity, counterparty & tier.
+
+Sample data:
+
+legal_entity, counterparty, tier,   max(rating by counterparty), sum(value where status=ARAP), sum(value where status=ACCR)
+   
+    L1,         Total,      Total,  calculated_value,            calculated_value,             calculated_value
+    L1,         C1,         Total,  calculated_value,            calculated_value,             calculated_value
+    Total,      C1,         Total,  calculated_value,            calculated_value,             calculated_value
+    Total,      Total,      1,      calculated_value,            calculated_value,             calculated_value
+    L2,         Total,      Total,  calculated_value,            calculated_value,             calculated_value
+....
+like all other values.
+
+where caluclated_value in sample data needs to be calculated using above method.
