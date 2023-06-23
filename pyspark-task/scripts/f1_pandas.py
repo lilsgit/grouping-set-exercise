@@ -3,11 +3,11 @@
 import pandas as pd
 
 # read the data from the csv file
-df1 = pd.read_csv('dataset1.csv')
-df2 = pd.read_csv('dataset2.csv')
+df_main = pd.read_csv('./data/dataset1.csv')
+df_dict = pd.read_csv('./data/dataset2.csv')
 
 # merge the two dataframes
-df3_first_merge = pd.merge(df1, df2, on='counter_party', how='inner')
+df_merged = pd.merge(df_main, df_dict, on='counter_party', how='inner')
 
 
 # function to calculate the metrics
@@ -32,17 +32,9 @@ def agg_group_by_cols(group_by_cols: [str], the_other_cols: [str]):
     agg_dict = {
         f"{col}": (col, 'count') for col in the_other_cols
     }
-    agg_dict.update(calculate_metrics(df3_first_merge, 'rating', 'value', 'status', 'ARAP', 'ACCR'))
+    agg_dict.update(calculate_metrics(df_merged, 'rating', 'value', 'status', 'ARAP', 'ACCR'))
 
-    return df3_first_merge.groupby(group_by_cols).agg(**agg_dict).reset_index()[desired_columns]
-
-
-def union_all_dataframes(all_mappings_list: [([str], [str])]):
-    all_dataframes = []
-    for group_by_cols, the_other_cols in all_mappings_list:
-        df = agg_group_by_cols(group_by_cols, the_other_cols)
-        all_dataframes.append(df)
-    return pd.concat(all_dataframes, axis=0, ignore_index=False)
+    return df_merged.groupby(group_by_cols).agg(**agg_dict).reset_index()[desired_columns]
 
 
 # generate all the group by pairs needed
@@ -55,8 +47,17 @@ def generate_all_pairs(*args):
     return all_mappings
 
 
-group_by_cols = ('legal_entity', 'counter_party', 'tier')
-all_pairs = generate_all_pairs(*group_by_cols)
+col_names_for_grouping = ('legal_entity', 'counter_party', 'tier')
+all_pairs = generate_all_pairs(*col_names_for_grouping)
+
+
+def union_all_dataframes(all_mappings_list: [([str], [str])]):
+    all_dataframes = []
+    for group_by_cols, the_other_cols in all_mappings_list:
+        df_final = agg_group_by_cols(group_by_cols, the_other_cols)
+        all_dataframes.append(df_final)
+    return pd.concat(all_dataframes, axis=0, ignore_index=False)
+
 
 df5 = union_all_dataframes(all_pairs)
 print(df5)

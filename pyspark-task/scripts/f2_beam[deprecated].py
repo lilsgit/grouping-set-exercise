@@ -8,7 +8,7 @@ pipeline = beam.Pipeline()
 # Read the data from the CSV files
 dataset1 = (
         pipeline
-        | 'Read dataset1' >> beam.io.ReadFromText('dataset1.csv')
+        | 'Read dataset1' >> beam.io.ReadFromText('./data/dataset1.csv')
         | 'Get each line' >> beam.Map(lambda line: re.sub(r'\r', ',', line).split(',')[6:])
         | 'Group records' >> beam.Map(lambda array: [array[i:i + 6] for i in range(0, len(array), 6)])
         | 'Create key-value pairs' >> beam.FlatMap(lambda fields: [(item[2], {
@@ -23,7 +23,7 @@ dataset1 = (
 
 dataset2 = (
         pipeline
-        | 'Read dataset2' >> beam.io.ReadFromText('dataset2.csv')
+        | 'Read dataset2' >> beam.io.ReadFromText('./data/dataset2.csv')
         | 'Get each line for d2' >> beam.Map(lambda line: re.sub(r'\r', ',', line).split(',')[2:])
         | 'Group records for d2' >> beam.Map(lambda array: [array[i:i + 2] for i in range(0, len(array), 2)])
         | 'Create key-value pairs for d2' >> beam.FlatMap(lambda fields: [(item[0], {

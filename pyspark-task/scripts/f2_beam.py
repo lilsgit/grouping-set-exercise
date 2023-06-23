@@ -27,7 +27,7 @@ pipeline = beam.Pipeline()
 # Read the data from the CSV files and join them
 dataset2 = (
         pipeline
-        | 'Read dataset2' >> beam.io.ReadFromText('dataset2.csv')
+        | 'Read dataset2' >> beam.io.ReadFromText('./data/dataset2.csv')
         | 'Get each record' >> beam.Map(lambda line: re.sub(r'\r', ',', line).split(',')[2:])
         | 'Group records based on len(col)=2' >> beam.FlatMap(
     lambda array: [array[i:i + 2] for i in range(0, len(array), 2)])
@@ -36,7 +36,7 @@ dataset2 = (
 
 merged_dataset = (
         pipeline
-        | 'Read dataset1' >> beam.io.ReadFromText('dataset1.csv')
+        | 'Read dataset1' >> beam.io.ReadFromText('./data/dataset1.csv')
         | 'Get each record ready' >> beam.Map(lambda line: re.sub(r'\r', ',', line).split(',')[6:])
         | 'Group cells into rows' >> beam.FlatMap(lambda array: [array[i:i + 6] for i in range(0, len(array), 6)])
         | 'Process dataset1 and merge dataset2 in' >> beam.ParDo(ProcessMainDataSet(), beam.pvalue.AsDict(dataset2))
@@ -62,7 +62,7 @@ class GroupByCols(beam.DoFn):
 
 class CalculateCountMaxSum(beam.CombineFn):
     def create_accumulator(self):
-        return (0, 0, 0, 0)
+        return 0, 0, 0, 0
 
     def add_input(self, accumulator, element):
         if len(element) == 3:
