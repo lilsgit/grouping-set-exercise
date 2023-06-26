@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/../python-task/.idea/pyspark-task.iml" filepath="$PROJECT_DIR$/../python-task/.idea/pyspark-task.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../python-task/.idea/python-task.iml" filepath="$PROJECT_DIR$/../python-task/.idea/python-task.iml" />
     </modules>
   </component>
 </project>

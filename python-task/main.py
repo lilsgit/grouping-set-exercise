@@ -12,7 +12,7 @@ def run_script(script_path):
 
 
 def main():
-    script_paths = ['./scripts/f2_beam.py', './scripts/f1_pandas.py', './scripts/f3_pyspark.py']
+    script_paths = ['./scripts/f1_pandas.py', './scripts/f2_beam.py', './scripts/f3_pyspark.py']
 
     for script_path in script_paths:
         output = run_script(script_path)
