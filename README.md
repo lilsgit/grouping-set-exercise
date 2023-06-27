@@ -1,4 +1,4 @@
-# python-practice (grouping set)
+# grouping set practice
 
 ## This repo contains simple coding excercise for the following questions: 
 
