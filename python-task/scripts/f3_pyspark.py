@@ -40,10 +40,13 @@ def agg_group_by_cols(group_by_cols: [str], the_other_cols: [str]):
 # Generate all the group by pairs needed
 def generate_all_pairs(*group_by_names):
     all_mappings = []
-    for i in range(len(group_by_names)):
-        group_by_name = [group_by_names[i]]
-        the_rest_names = [group_by_names[j] for j in range(len(group_by_names)) if j != i]
-        all_mappings.append((group_by_name, the_rest_names))
+
+    for i, col in enumerate(group_by_names):
+        all_mappings.append(([col], [name for name in group_by_names if name != col]))
+        for j in range(i + 1, len(group_by_names)):
+            all_mappings.append(([col, group_by_names[j]],
+                                 [name for name in group_by_names if name != col and name != group_by_names[j]]))
+
     return all_mappings
 
 
