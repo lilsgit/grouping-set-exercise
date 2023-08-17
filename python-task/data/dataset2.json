@@ -1,0 +1,26 @@
+[
+  {
+    "counter_party": "C1",
+    "tier": 1
+  },
+  {
+    "counter_party": "C2",
+    "tier": 2
+  },
+  {
+    "counter_party": "C3",
+    "tier": 3
+  },
+  {
+    "counter_party": "C4",
+    "tier": 4
+  },
+  {
+    "counter_party": "C5",
+    "tier": 5
+  },
+  {
+    "counter_party": "C6",
+    "tier": 6
+  }
+]
